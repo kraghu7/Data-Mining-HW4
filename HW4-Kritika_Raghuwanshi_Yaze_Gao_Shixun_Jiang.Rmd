@@ -1,0 +1,1504 @@
+---
+title: "IDS572 HW4"
+author: "Kritika Raghuwanshi;Shixun Jiang;Yaze Gao"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: lualatex
+  word_document: default
+header-includes: \usepackage{sectsty} \sectionfont{\centering}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Reading the Data Set
+
+To proceed with the analysis, we load the data set into R using the file.choose() function, which allows the user to select a file following a prompt. For ease of calling it, we store the values in a variable called **"rm"**, which stands for retention_model.
+
+```{r retention_model}
+library(readxl)
+travel_retention <- read_excel("C:/Travel Company Retention Model.xlsx")
+dim(travel_retention)
+```
+
+A closer look at the data using the "View" function shows us that cells **2390 to 2392** are all **NA**, which isn't useful for our model. These NAs are across all variables and not specific to certain variables, so removing them from the data set for the purpose of further analysis would cause no harm. We also make use of the **"drop = FALSE"** function here to make the output a one dimensional matrix and not convert it into a Vector.
+
+```{r}
+ogdata <- travel_retention #to keep a copy of the original data set as is
+tr <- travel_retention[-(2390:2392),,drop = FALSE]#to remove the NA cells
+dim(tr)
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Data Modification
+
+We have been informed in this data set's description that **"Retained in 2012"** is the target variable, but since it's currently in binary format (0 or 1), we convert it to something more meaningful using the **IfElse"** condition as follows:
+
+```{r}
+library(knitr)
+tr$target <- as.factor(ifelse(tr$Retained.in.2012. == 1,
+                        "Returned", " Didn't Return"))
+kable(table(tr$target))
+sum(is.na(tr$target))
+```
+
+Similarly, we can convert two more binary variables into categorical, which are **"Is.Non.Annual"** & **"School.Sponsor"**, using the IfElse condition like above. This will help us with Exploratory Data Analysis (EDA) in the future:
+
+```{r}
+tr$Is.Non.Annual. <- as.factor(ifelse(tr$Is.Non.Annual. == 1, "Yes", "No"))
+tr$School.Sponsor <- as.factor(ifelse(tr$School.Sponsor == 1, 
+                              "Sponsoring", "Not Sponsoring"))
+```
+
+After this, we've got a few variables, whose values are quite large, for example, **"SchoolGradeType"** has values called **"Elementary->Elementary"**, which we can convert to **"E->E"** etc. for better data visualization, and similarly for the variable **"Income.Level"**, we've got many levels, which don't quite mean anything, as it's got levels A to Z, and then some for P1, P2 etc., which are not coherent. In order to fix this, we can use the **"Mutate"** and the **"Recode"** function in R to convert these values as shown below:
+
+```{r}
+library(dplyr)
+tr <- tr %>% mutate(SchoolGradeType = recode(SchoolGradeType, 
+                             "Elementary->Elementary" = "E->E",
+                             "Middle->Middle" = "M->M",
+                             "High->High" = "H->H",
+                             "Undefined->Undefined" = "U->U",
+                             "Middle->Undefined" = "M->U",
+                             "Elementary->Middle" = "E->M",
+                             "Middle->High" = "M->H",
+                             "Elementary->High" = "E->H",
+                             "Elementary->Undefined" = "E->U"))
+unique(tr$SchoolGradeType)
+```
+
+\newpage
+
+For the Income.Level variable, we can map the values in such a way:
+
+1. A, B, C, D, and E = Low
+2. F, G, H, I, J, K, and L = Medium
+3. M, N, O, P, Q, and Z = High
+4. P1, P2, P3, and P4 = High (as it's a variation of P category)
+
+```{r}
+tr <- tr %>% mutate(Income.Level = recode(Income.Level, 
+                             "A" = "Low",
+                             "B" = "Low",
+                             "C" = "Low",
+                             "D" = "Low",
+                             "E" = "Low",
+                             "F" = "Medium",
+                             "G" = "Medium",
+                             "H" = "Medium",
+                             "I" = "Medium",
+                             "J" = "Medium",
+                             "K" = "Medium",
+                             "L" = "Medium",
+                             "M" = "High",
+                             "N" = "High",
+                             "O" = "High",
+                             "P" = "High",
+                             "Q" = "High",
+                             "Z" = "Unclassified",
+                             "P1" = "High",
+                             "P3" = "High",
+                             "P4" = "High",
+                             "P5" = "High"))
+unique(tr$Income.Level)
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Data Removal / Cleaning
+
+A closer look at the data set shows us that we've got a lot of redundant columns or irrelevant information, which is better removed than kept, so we can do better analysis overall. See the below table for column names that we've removed, along with their description:
+
+```{r}
+library(knitr)
+
+tbl <- data.frame(
+ColumnNumber = c("Column 1", "Column 2", "Column 5", "Column 9", 
+                 "Column 10", "Column 11", "Column 12", "Column 17",
+                 "Column 18", "Column 21", "Column 37", "Column 39",
+                 "Column 40", "Column 56"),
+
+ColumnName = c("ID", "Program.code", "Group.state", "Departure.Date", 
+               "Return.Date", "Deposit.Date", "Special.Pay", "Early.RPL", 
+               "Latest.RPL", "Initial.System.Date",  "SPR.Group.Revenue", 
+               "FirstMeeting", "LastMeeting", "Retained.in.2012"),
+
+ReasonForRemoval = c("Irrelevant Variable", "Irrelevant Variable",
+                     "Correlated Variable", "Correlated & Date Variable",
+                     "Correlated & Date Variable", "Date Variable",
+                     "Missing Variables (majority data missing)",
+                     "Date Variable", "Date Variable", "Date Variable",
+                     "Irrelevant Variable", "Correlated Variable",
+                     "Correlated Variable", "Variable replaced with 'target'"))
+kable(tbl)
+```
+
+\newpage
+
+Code for removing the variable and the dimension of the data set after removal
+
+```{r}
+dim(tr)
+tr <- tr[,-c(1, 2, 5, 9, 10, 11, 12, 17, 18, 21, 37, 39, 40, 56)]#removal
+dim(tr)
+```
+
+Now that we've removed some of the variables, we also need to clean the data set to remove **"NAs"** from all the variables. In order to see which variables still have NAs, we write the following code:
+
+```{r}
+sum(is.na(tr))#to get the sum of NAs in the data set
+kable(colSums(is.na(tr)))#to get the column names having NA values within them
+```
+
+\newpage
+
+However, the above code only shows NA values which are simply missing values within the data set. It does not account for all those variables where NAs are written in the following formats:
+
+1. "NA" or
+2. 'NA'
+
+In order to fix this issue, we converted all **single and double quoted "NAs"** to simple NAs as follows:
+
+```{r}
+tr[tr == "NA"] <- NA
+sum(is.na(tr))
+kable(colSums(is.na(tr)))
+```
+
+\newpage
+As we can see from the above results, we've got about 2025 NA values that we need to clean up in our data set, where it would not be prudent to remove them as is. Instead, we can replace the NA values with the mode of all the values in a variable. For this, we can utilize a function to calculate the mode as shown below. The mode function calculates the mode for replacing these NA values for numerical variables while replacing the most occurring value for the categorical ones.
+
+```{r}
+Modes <- function(x) {
+  ux <- unique(x)
+  tab <- tabulate(match(x, ux))
+  ux[tab == max(tab)]
+}
+```
+
+Now that we've created a function to find the statistical mode, we can convert the NA values to modes for each of those variables that have missing values. We go in the order listed above, starting with **From.Grade** and going to **"SchoolSizeIndicator"**:
+
+**1. Removing NAs from the "From.Grade" variable:**
+
+```{r}
+mode_FromGrade <- Modes(tr$From.Grade)
+
+tr$From.Grade <- replace(tr$From.Grade,is.na(tr$From.Grade), mode_FromGrade)
+
+sum(is.na(tr$From.Grade))
+```
+
+**2. Removing NAs from the "To.Grade" variable:**
+
+```{r}
+mode_ToGrade <- Modes(tr$To.Grade)
+
+tr$To.Grade <- replace(tr$To.Grade,is.na(tr$To.Grade), mode_ToGrade)
+
+sum(is.na(tr$To.Grade))
+```
+
+**3. Removing "N" values from "Travel.Type" variable:**
+
+Since the Travel.Type variable has 2 "N" values, which are anomalies, as the variable should only contain three modes of travel: Air (A), Bus (B), and Train (T). We try to remove them using the following method, where we search for entries with "N" and the remove them:
+
+```{r}
+sum((tr$Travel.Type) == 'N')
+mode_TravelType <- Modes(tr$Travel.Type)
+
+tr$Travel.Type <- replace(tr$Travel.Type, tr$Travel.Type == 'N',
+                          mode_TravelType)
+
+sum((tr$Travel.Type) == 'N')
+```
+
+\newpage
+
+**4. Removing NAs from the "Poverty.Code" variable:**
+
+```{r}
+mode_PovertyCode <- Modes(tr$Poverty.Code)
+
+tr$Poverty.Code <- replace(tr$Poverty.Code,is.na(tr$Poverty.Code), 
+                           mode_PovertyCode)
+
+sum(is.na(tr$Poverty.Code))
+```
+
+**5. Removing NAs from the "CRM.Segment" variable:**
+
+```{r}
+mode_CRMSegment <- Modes(tr$CRM.Segment)
+
+tr$CRM.Segment <- replace(tr$CRM.Segment,is.na(tr$CRM.Segment), 
+                           mode_CRMSegment)
+
+sum(is.na(tr$CRM.Segment))
+```
+
+**6. Removing NAs from the "MDR.Low.Grade" variable:**
+
+```{r}
+mode_MDRLowGrade <- Modes(tr$MDR.Low.Grade)
+
+tr$MDR.Low.Grade <- replace(tr$MDR.Low.Grade,is.na(tr$MDR.Low.Grade),
+                             mode_MDRLowGrade)
+
+sum(is.na(tr$MDR.Low.Grade))
+```
+
+**7. Removing NAs from the "MDR.High.Grade" variable:**
+
+```{r}
+mode_MDRHighGrade <- Modes(tr$MDR.High.Grade)
+
+tr$MDR.High.Grade <- replace(tr$MDR.High.Grade,is.na(tr$MDR.High.Grade),
+                             mode_MDRHighGrade)
+
+sum(is.na(tr$MDR.High.Grade))
+```
+
+**8. Removing NAs from the "Total.School.Enrollment" variable:**
+
+*Here we calculate the mean v/s the mode given the data within this variable.*
+
+```{r}
+mean_TotalSchoolEnrollment <- round(mean(tr$Total.School.Enrollment,
+                                         na.rm = TRUE))
+
+tr$Total.School.Enrollment <- replace(tr$Total.School.Enrollment,
+                              is.na(tr$Total.School.Enrollment),
+                              mean_TotalSchoolEnrollment)
+
+sum(is.na(tr$Total.School.Enrollment))
+```
+
+\newpage
+
+**9. Removing NAs from the "Income.Level" variable:**
+
+```{r}
+mode_IncomeLevel <- Modes(tr$Income.Level)
+
+tr$Income.Level <- replace(tr$Income.Level,is.na(tr$Income.Level),
+                             mode_IncomeLevel)
+
+sum(is.na(tr$Income.Level))
+
+unique(tr$Income.Level)
+```
+
+**10. Removing NAs from the "DifferenceTraveltoFirstMeeting" variable:**
+
+*Here we calculate the mean v/s the mode given the data within this variable.*
+
+```{r}
+mean_DifferenceTraveltoFirstMeeting <- round(mean(as.numeric(
+tr$DifferenceTraveltoFirstMeeting),na.rm=TRUE))
+
+tr$DifferenceTraveltoFirstMeeting <- replace(tr$DifferenceTraveltoFirstMeeting,
+                                      is.na(tr$DifferenceTraveltoFirstMeeting),
+                                      mean_DifferenceTraveltoFirstMeeting)
+
+sum(is.na(tr$DifferenceTraveltoFirstMeeting))
+```
+
+**11. Removing NAs from the "DifferenceTraveltoLastMeeting" variable:**
+
+*Here we calculate the mean v/s the mode given the data within this variable.*
+
+```{r}
+mean_DifferenceTraveltoLastMeeting <- round(mean(as.numeric(
+tr$DifferenceTraveltoLastMeeting),na.rm=TRUE))
+
+tr$DifferenceTraveltoLastMeeting <- replace(tr$DifferenceTraveltoLastMeeting,
+                                      is.na(tr$DifferenceTraveltoLastMeeting),
+                                      mean_DifferenceTraveltoLastMeeting)
+
+sum(is.na(tr$DifferenceTraveltoLastMeeting))
+```
+
+**12. Removing NAs from the "FPP.to.School.enrollment" variable:**
+
+*Here we calculate the mean v/s the mode given the data within this variable.*
+
+```{r}
+mean_FPPToSchoolEnrollment <- round(mean(as.numeric(tr$FPP.to.School.enrollment)
+                                         ,na.rm=TRUE))
+
+tr$FPP.to.School.enrollment <- replace(tr$FPP.to.School.enrollment,
+                               is.na(tr$FPP.to.School.enrollment),
+                               mean_FPPToSchoolEnrollment)
+
+sum(is.na(tr$FPP.to.School.enrollment))
+```
+\newpage
+
+**13. Removing NAs from the "SchoolSizeIndicator" variable:**
+
+```{r}
+tr$SchoolSizeIndicator <- sapply(tr$SchoolSizeIndicator,
+                                 as.character, na.rm=TRUE)
+
+mode_SchoolSizeIndicator <- Modes(tr$SchoolSizeIndicator)
+
+tr$SchoolSizeIndicator <- replace(tr$SchoolSizeIndicator,
+                                  is.na(tr$SchoolSizeIndicator), 
+                                  mode_SchoolSizeIndicator)
+
+
+sum(is.na(tr$SchoolSizeIndicator))
+
+unique(tr$SchoolSizeIndicator)
+```
+
+\newpage
+
+**Post removing all the NAs, quoted and unquoted, our table looks like the following:**
+
+```{r}
+kable(colSums(is.na(tr)))
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Converting variables to Factors
+
+Now that we've cleaned the entire data set, we need to convert some variables into factors for the portion to follow, where we'll be doing Exploratory Data Analysis (EDA):
+
+```{r}
+
+tr$From.Grade <- as.factor(tr$From.Grade)
+tr$To.Grade <- as.factor(tr$To.Grade)
+tr$Travel.Type <- as.factor(tr$Travel.Type)
+tr$Poverty.Code <- as.factor(tr$Poverty.Code)
+tr$Region <- as.factor(tr$Region)
+tr$CRM.Segment <- as.factor(tr$CRM.Segment)
+tr$School.Type <- as.factor(tr$School.Type)
+tr$MDR.Low.Grade <- as.factor(tr$MDR.Low.Grade)
+tr$MDR.High.Grade  <- as.factor(tr$MDR.High.Grade)
+tr$Income.Level  <- as.factor(tr$Income.Level)
+tr$SPR.Product.Type  <- as.factor(tr$SPR.Product.Type)
+tr$SPR.New.Existing  <- as.factor(tr$SPR.New.Existing)
+
+tr$DifferenceTraveltoFirstMeeting <- as.numeric(
+tr$DifferenceTraveltoFirstMeeting)
+
+tr$DifferenceTraveltoLastMeeting <- as.numeric(
+tr$DifferenceTraveltoLastMeeting)
+
+tr$SchoolGradeTypeLow <- as.factor(tr$SchoolGradeTypeLow)
+tr$SchoolGradeTypeHigh <- as.factor(tr$SchoolGradeTypeHigh)
+tr$SchoolGradeType <- as.factor(tr$SchoolGradeType)
+tr$GroupGradeTypeLow <- as.factor(tr$GroupGradeTypeLow)
+tr$GroupGradeTypeHigh <- as.factor(tr$GroupGradeTypeHigh)
+tr$GroupGradeType <- as.factor(tr$GroupGradeType)
+tr$DepartureMonth <- as.factor(tr$DepartureMonth)
+tr$MajorProgramCode <- as.factor(tr$MajorProgramCode)
+
+tr$FPP.to.School.enrollment <- as.numeric(tr$FPP.to.School.enrollment)
+
+tr$MajorProgramCode <- as.factor(tr$MajorProgramCode)
+tr$SchoolSizeIndicator <- as.factor(tr$SchoolSizeIndicator)
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Exploratory Data Analysis (EDA)
+
+In order to perform EDA, we can use some of the key variables and measure them against our target variable called **"target"**.
+
+**1. SchoolGradeType v/s target**
+
+```{r}
+library(ggplot2)
+library(scales)
+ggplot(tr, aes(SchoolGradeType, target, fill = target)) + 
+geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+labs(title = "School Grade Type v/s Target", x = "School Grade Type",
+             y= "Retained in 2012")
+```
+
+\newpage
+
+**Pie chart for School Grade Type distribution**
+
+```{r}
+library(ggplot2)
+library(plotrix)
+pietable <- table(tr$SchoolGradeType)
+percent <- round(pietable/sum(pietable)*100)
+label1 <- paste(names(pietable),percent)
+label2 <- paste(label1, "%", sep="")
+pie3D(pietable, labels = label2, explode = 0.1, 
+main="Distribution of School Grade Type", radius = 1.5)
+```
+
+**Analysis**
+
+From the first chart, we notice that **"Middle->Middle School"** grade type return to the Scholastic Travel Company (STC) more frequently compared to other grade types, with the next best being **Elementary->Elementary** grade type. However, we also notice that the highest ratio of not returning is also for the middle school grade type. For this reason, we pull a pie chart of the school grade type distribution. The pie chart shows us that the above result is due to "Middle School" grade type occupying 72% of the data, while the rest of the school grade types don't have much spread across the data set. **Hence our data shows a spike for middle school grade type.**
+
+\newpage
+
+**Pie chart to understand the impact of the program being annual on retention**
+
+```{r}
+pietable <- table(tr$Is.Non.Annual.)
+percent <- round(pietable/sum(pietable)*100)
+label1 <- paste(names(pietable),percent)
+label2 <- paste(label1, "%", sep="")
+pie3D(pietable, labels = label2, explode = 0.1, 
+      main="Distribution of Annual v/s Non-Annual Programs", radius = 1)
+```
+
+\newpage
+
+**2. Is.Non.Annual v/s target**
+
+```{r}
+ggplot(tr, aes(Is.Non.Annual., target, fill = target)) + 
+geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+labs(title = "Is Non Annual v/s Target", x = "Is Non Annual",
+             y= "Retained in 2012")
+```
+
+**Analysis**
+
+Based on the two graphs above, we notice that certain groups within schools tend to repeat the tour yearly while some groups don't. We can see clearly that the group that repeats this annually prefers going back to the travel company and retain them, while the groups not performing these tours annually, tend to not repeat this travel company.
+
+\newpage
+
+**3. SchoolType v/s Is.Non.Annual / Target**
+
+```{r}
+ggplot(tr, aes(School.Type, Is.Non.Annual., fill = Is.Non.Annual.)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Type v/s Is Non Annual", x = "School Type",
+         y= "Is Non Annual")
+```
+
+**Analysis**
+
+In the above graph we notice that out of the different type of schools, Public, Catholic, CHD, and Private (non-christian), the groups within Public schools tend to use Scholastic Travel Company (STC) for tours more than the groups within other types of schools. In fact, they tend to prefer doing these annually v/s every other year.
+
+\newpage
+
+The same theory can also be confirmed with the graph below, where an analysis of School Type v/s target shows us that Public schools return to STC more than any other type of school.
+
+```{r}
+ggplot(tr, aes(School.Type, target, fill = target)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Type v/s Target", x = "School Type",
+         y= "Retained in 2012")
+```
+
+\newpage
+
+**4. SchoolGradeType v/s Is.Non.Annual**
+
+```{r}
+ggplot(tr, aes(SchoolGradeType, Is.Non.Annual., fill = Is.Non.Annual.)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Grade Type v/s Is Non Annual", x = "School Grade Type",
+         y= "Is Non Annual")
+```
+
+**Analysis**
+
+Just like the previous analysis, we see that groups from the Middle school grade types repeat the tours annually most frequently with STC compared to other grade types. This theory was also corroborated with the very first analysis we did where we compared SchoolGradeType with the target variable, and noticed that Middle School grade types had higher chances to returning to STC compared to other grade types.
+
+\newpage
+
+**5. SchoolSizeIndicator v/s Is.Non.Annual / Target**
+
+```{r}
+ggplot(tr, aes(SchoolSizeIndicator, Is.Non.Annual., fill = Is.Non.Annual.)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Size Indicator v/s Is Non Annual",
+         x = "School Size Indicator",
+         y= "Is Non Annual")
+```
+
+**Analysis**
+
+Firstly, there are different types of school sizes - Small (S), Large (L), Small to Medium (S-M), and Medium to Large (M-L). Per this analysis, we notice that groups from **Small** sized schools are more likely to go with a tour **every other year** and not **annually**. However, groups from Small to Medium sized schools are more likely to **return to STC annually** compared to other sized schools.
+
+\newpage
+
+This theory can be further validated in the below graph, where we compare the school size with the target variable. We notice that **Small sized schools did not return to STC as frequently** as the **Small to Medium** sized schools, who returned the most to STC, simply because they wanted the tours to be annual.
+
+```{r}
+ggplot(tr, aes(SchoolSizeIndicator, target, fill = target)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Size Indicator v/s Target",
+         x = "School Size Indicator",
+         y= "Retained in 2012")
+```
+
+\newpage
+
+**6. SPR.New.Existing v/s Target**
+
+**Pie Chart**
+
+In order to better understand the distribution of existing v/s new groups, we use the pie chart as we've done in above examples:
+
+```{r}
+pietable <- table(tr$SPR.New.Existing)
+percent <- round(pietable/sum(pietable)*100)
+label1 <- paste(names(pietable),percent)
+label2 <- paste(label1, "%", sep="")
+pie3D(pietable, labels = label2, explode = 0.1, 
+      main="Distribution of New & Existing Customers", radius = 1)
+```
+
+\newpage
+
+```{r}
+ggplot(tr, aes(SPR.New.Existing, target, fill = target)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "SPR New Existing v/s Target",
+         x = "SPR New Existing",
+         y= "Retained in 2012")
+```
+
+**Analysis**
+
+Firstly, we notice that there are 67% existing groups / customers for STC while 33% (with some exceptions) are new. This is also seen in the next graph, where we compare this metric with the target variable. In the second graph, we notice that existing customers returned the most to STC compared to new customers, which shows that existing customers were loyal to the travel company.
+
+\newpage
+
+**7. Income.Level v/s Poverty.Code / Target**
+
+**Pie chart**
+
+In order to better understand the distribution of parents' income level, we use the pie chart as we've done in above examples. From the below graph, We notice that majority of the parents fall in the **"high"** income range, followed by the **"medium"** income range.
+
+```{r}
+pietable <- table(tr$Income.Level)
+percent <- round(pietable/sum(pietable)*100)
+label1 <- paste(names(pietable),percent)
+label2 <- paste(label1, "%", sep="")
+pie3D(pietable, labels = label2, explode = 0.1, 
+      main="Distribution of Income Levels", radius = 1)
+```
+
+\newpage
+
+In order to see the distribution of these income level in relation to the poverty codes, we first look at the distribution of the codes. Please note the following distribution of poverty codes per the data set:
+
+1. A -> 0 to 5.9
+2. B -> 6 to 15.9
+3. C -> 16 to 30.9
+4. D -> 31 or more
+5. E -> Unclassified
+
+```{r}
+pietable <- table(tr$Poverty.Code)
+percent <- round(pietable/sum(pietable)*100)
+label1 <- paste(names(pietable),percent)
+label2 <- paste(label1, "%", sep="")
+pie3D(pietable, labels = label2, explode = 0.1, 
+      main="Distribution of Poverty Codes", radius = 1)
+```
+
+In the above graph, we notice that the highest chunk of poverty code falls in B, with 65%, followed by C and then A. Unclassified or E is just 1%.
+
+\newpage
+
+
+```{r}
+ggplot(tr, aes(Poverty.Code, Income.Level, fill = Income.Level)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "Poverty Code v/s Income Level",
+         x = "Poverty Code",
+         y= "Income Level")
+```
+
+**Analysis**
+
+In the below graph, we notice that poverty code B has the most distribution of **medium** and **high** salary ranges, among other salary types. This means that parents earning high or medium salary normally fall in areas with a poverty level of 6 to 15.9, which isn't too bad. As expected, areas with poverty level of 0 to 5.9, which is denoted by A, have a lot of parents with "high" salaries but very few within the medium and low ranges.
+
+\newpage
+
+```{r}
+ggplot(tr, aes(Income.Level, target, fill = target)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "Income Level v/s Target",
+         x = "Income Level",
+         y= "Retained in 2012")
+```
+
+**Analysis**
+
+In the above graph, we can finally conclude that those parents with a **high** or **medium** salary, are the ones who retain the travel company and continue paying for the tours for their children. However, the ones with low or unclassified salaries are less likely to utilize the travel company, which could mean that the price is quite high for those families, for them to afford the same.
+
+\newpage
+
+**8. Target v/s Total.School.Enrollment**
+
+```{r}
+ggplot(tr, aes(target, Total.School.Enrollment, fill = target)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "Target v/s Total School Enrollment",
+         x = "Retained in 2012",
+         y= "Total School Enrollment")
+```
+
+**Analysis**
+
+In the above graph, we notice that those schools that have more student enrollments (big schools), returned to the travel company compared to those schools that didn't have enough enrollment (small schools).
+
+\newpage
+
+**9. School.Type v/s Total.School.Enrollment**
+
+To see the enrollments based on the school type, we use the following code:
+
+```{r}
+options(scipen = 5)
+ggplot(tr, aes(School.Type, Total.School.Enrollment, fill = School.Type)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Type v/s Total School Enrollment",
+         x = "School Type",
+         y= "Total School Enrollment")
+```
+
+**Analysis**
+
+Based on the above graph, we notice that public schools in the area have the most student enrollment compared to the private and catholic schools. However, we also see a decent spike in CHD school, which is likely private.
+
+\newpage
+
+**10. SchoolGradeType v/s Total.School.Enrollment**
+
+```{r}
+options(scipen = 5)
+ggplot(tr, aes(SchoolGradeType, Total.School.Enrollment, fill = SchoolGradeType)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Grade Type v/s Total School Enrollment",
+         x = "School Grade Type",
+         y= "Total School Enrollment")
+```
+
+**Analysis**
+
+In the above graph, we can see that at a grade type level, most enrollments are in the middle->middle schools compared to others. The next best is High->High school.
+
+\newpage
+
+**11. School Sponsor v/s School Type**
+
+```{r}
+ggplot(tr, aes(School.Type, School.Sponsor, fill = School.Sponsor)) + 
+    geom_bar(stat = "identity") + scale_x_discrete(labels = label_wrap(10)) + 
+    labs(title = "School Type v/s School Sponsor",
+         x = "School Type",
+         y= "School Sponsor")
+```
+
+**Analysis**
+
+Per the above graph and analysis, we can see that **Public** schools do not sponsor the tours with the travel company. However, we noticed from the above graphs that they tend to return to those tours annually, which means **Public schools are asking parents to sponsor majority of the trips v/s sponsoring it themselves**. On the other hand, **Private and CHD** schools are sponsoring more trips for their students, followed by Public schools, which makes sense as private schools draw more money compared to public schools, which are generally free.
+
+\newpage
+
+\sectionfont{\centering}
+
+# Summary of Exploratory Data Analysis
+
+1. Within the SchoolGradeType variable, highest distribution is of the **Middle->Middle** grade types at **72%**
+
+2. **"Middle->Middle School"** grade type return to the Scholastic Travel Company (STC) more frequently compared to other grade types, with the next best being **Elementary->Elementary** grade type
+
+3. **85%** of the programs / tours are held annually while **15%** of them happen every other year
+
+4. The groups that prefer to **hold tours annually**, return to Scholastic Travel Company (STC) compared to the group that **doesn't prefer** annual tours
+
+5. **Public** schools tend to go for the most tours compared to **Private** schools, while also using the travel company for **annual** tours v/s every other year
+
+6. **Middle->Middle** school grade types return the most to STC compared to other grade types, especially **annual** tours
+
+7. **Small** sized schools prefer to go for tours with STC every other year and not annually. However, **Small to Medium** schools go more frequently for annual tours with STC than other sized schools.
+
+8. **67%** of the customers / groups are existing while **33%** are new for Scholastic Travel Company (STC)
+
+9. The **existing** customers returned the most to STC compared to **new** customers.
+
+10. **49%** of the parents fall in the **High** salary category, followed by **39%** in the **Medium** salary category
+
+11. **65%** of the areas fall under Poverty Code of **B**, while **21%** fall under code **C**, followed by **11%** in code **A**
+
+12. Areas under poverty code **B** has the most distribution of **High** and **Medium** salaries, while areas under poverty code **A** have a lot of **High** salaried parents compared to other income levels
+
+13. Parents with **High** and **Medium** salaries returned the most to STC for tours and continued paying annually compared to parents with **Low** and **Unclassified** salaries
+
+14. Schools with the **high student enrollments** returned to STC compared to ones with **low student enrollments**
+
+15. The highest student enrollment is in **Public** schools compared to **Private** schools
+
+16. Out of those public schools, the most enrollment is in **Middle->Middle** school grade types, followed by **High->High** grade type
+
+17. Public schools are **not sponsoring** most tours for their students and likely depending on parents to pay for the tour. **Private** schools are **sponsoring** slightly more than the public schools
+
+\newpage
+
+\sectionfont{\centering}
+
+# Correlation
+
+In order to show the correlation between the numeric variables, we do the following:
+
+```{r}
+library(corrplot)
+tr_corr1 <- select_if(tr, is.numeric)# to select only numeric variables in tr
+tr_corr2 <- as.numeric(tr$target)# converts target into numeric variable
+tr_corr3 <- cbind(tr_corr1, tr_corr2)# binds the above two variables
+```
+
+```{r}
+corrplot(round(cor(tr_corr3)), digits = 1) #draws the correlation plot
+```
+
+We can see from the above correlation matrix that highly correlated variables are:
+
+1. FRP.Active
+2. FPP
+3. Total.Discount.Pax
+4. Total.Pax
+5. Num.of.Non_FPP.PAX
+
+\newpage
+
+\sectionfont{\centering}
+
+# Predictive Models
+
+# Decision Tree
+
+## Decision Tree with all variables and default cp
+
+We start first with the Decision tree model, for which we need to partition the data set into train and test data. In this iteration, we're taking the target variable and comparing it to all the input variables, and also going with a default cp of 0.1.
+
+```{r}
+set.seed(30)
+index_dt1 <-  sample(2, nrow(tr) , replace = T , prob = c(0.6 , 0.4)) 
+train_dt1 <- tr[index_dt1 == 1, ]
+test_dt1 <- tr[index_dt1 == 2, ]
+```
+
+Once we're done partitioning, we proceed to with creating the model and printing the decision tree, its rules, and its summary. This can be done using the below chunk of codes:
+
+```{r}
+library(rpart)
+tree_model1 <- rpart(target ~., train_dt1)
+print(tree_model1) # to print the decision rules
+```
+
+\newpage
+
+To plot an rpart decision tree we can use the "rpart.plot()" function from "rpart.plot" package:
+```{r}
+library(rpart.plot)
+rpart.plot(tree_model1)
+rpart.rules(tree_model1)
+```
+
+\newpage
+
+In order to see a more fancier version of rpart.plot, we also have the option of fancyRpartPlot() function, which is part of the rattle library. It can be run as follows:
+
+```{r}
+library(rattle)
+fancyRpartPlot(tree_model1, palettes=c("Reds", "Greens"), sub="")
+```
+
+\newpage
+
+To obtain the error rate for the training and test data, we run the following sets of commands:
+
+```{r}
+#Error rate for training data
+
+pred_train1 <- predict(tree_model1, data = train_dt1, type = "class")
+mean(train_dt1$target != pred_train1)
+
+
+# Error rate for the test data
+
+pred_test1 <- predict(tree_model1, data1 = test_dt1, type = "class")
+mean(test_dt1$target != pred_test1)
+```
+
+\newpage
+
+Final summary is as follows:
+
+```{r}
+summary(tree_model1)
+```
+
+Here we notice that one of the key variables being considered by the model is **SingleGradeTripFlag**, which indicates if there was a trip taken by students from the same grade or not. If this variable is false, that is if the students don't belong to the same grade, there's a **55%** chance of groups returning to the Scholastic Travel Company (STC).
+
+\newpage
+
+## Decision tree with "information" split
+
+Here we're going to follow the same steps as above, but instead of taking all input variables for our consideration, we'll only take numeric variables of note.
+
+```{r}
+set.seed(30)
+index_dt2 <-  sample(2, nrow(tr) , replace = T , prob = c(0.75 , 0.25)) 
+train_dt2 <- tr[index_dt2 == 1, ]
+test_dt2 <- tr[index_dt2 == 2, ]
+```
+
+Once we're done partitioning, we proceed to with creating the model and printing the decision tree, its rules, and its summary. This can be done using the below chunk of codes:
+
+```{r}
+library(rpart)
+tree_model2 <- rpart(target ~., train_dt2, parms = list(split = "information"), 
+control = rpart.control(minbucket = 0, minsplit = 0, cp = 0.03))
+print(tree_model2) # to print the decision rules
+```
+
+\newpage
+
+To calculate the BestCp, We calculate the optimal xerror by adding min_xerror + min_xstd, which we do as follows:
+
+```{r}
+mincp_i_travel <- which.min(tree_model2$cptable[, 'xerror'])
+optError_travel <- tree_model2$cptable[mincp_i_travel, "xerror"] + 
+tree_model2$cptable[mincp_i_travel, "xstd"]
+```
+
+After this, we find the row(index) of the xerror value which is closest to optError calculated above, using the following code:
+
+```{r}
+optCP_i_travel <- 
+which.min(abs(tree_model2$cptable[,"xerror"] - optError_travel))
+```
+
+Finally, to get the best CP, we find the cp value corresponding to optCP_i calculated above:
+
+```{r}
+optCP_travel <- tree_model2$cptable[optCP_i_travel, "CP"]
+print(optCP_travel)
+```
+
+\newpage
+
+To plot an rpart decision tree we can use the "rpart.plot()" function from "rpart.plot" package:
+```{r}
+library(rpart.plot)
+rpart.plot(tree_model2)
+rpart.rules(tree_model2)
+```
+
+\newpage
+
+In order to see a more fancier version of rpart.plot, we also have the option of fancyRpartPlot() function, which is part of the rattle library. It can be run as follows:
+
+```{r}
+library(rattle)
+fancyRpartPlot(tree_model2, palettes=c("Reds", "Greens"), sub="")
+```
+
+\newpage
+
+To obtain the error rate for the training and test data, we run the following sets of commands:
+
+```{r}
+#Error rate for training data
+
+pred_train2 <- predict(tree_model2, data = train_dt2, type = "class")
+mean(train_dt2$target != pred_train2)
+
+
+# Error rate for the test data
+
+tree_model2_pruned <- prune(tree_model2, cp = optCP_travel)
+
+pred_test2 <- predict(tree_model2_pruned, data1 = test_dt2, type = "class")
+mean(test_dt2$target != pred_test2)
+```
+
+\newpage
+
+Final summary is as follows:
+
+```{r}
+summary(tree_model2)
+```
+
+\newpage
+
+## Decision tree with "gini" split and cp = 0
+
+Here we're going to follow the same steps as above, but instead of taking all input variables for our consideration, we'll only take numeric variables of note.
+
+```{r}
+set.seed(30)
+index_dt3 <-  sample(2, nrow(tr) , replace = T , prob = c(0.75 , 0.25)) 
+train_dt3 <- tr[index_dt3 == 1, ]
+test_dt3 <- tr[index_dt3 == 2, ]
+```
+
+Once we're done partitioning, we proceed to with creating the model and printing the decision tree, its rules, and its summary. This can be done using the below chunk of codes:
+
+```{r}
+library(rpart)
+tree_model3 <- rpart(target ~., train_dt3, parms = list(split = "gini"), 
+control = rpart.control(minbucket = 6, minsplit = 6, cp = 0))
+```
+
+\newpage
+
+To calculate the BestCp, We calculate the optimal xerror by adding min_xerror + min_xstd, which we do as follows:
+
+```{r}
+mincp_i_travel1 <- which.min(tree_model3$cptable[, 'xerror'])
+optError_travel1 <- tree_model3$cptable[mincp_i_travel1, "xerror"] + 
+tree_model3$cptable[mincp_i_travel1, "xstd"]
+```
+
+After this, we find the row(index) of the xerror value which is closest to optError calculated above, using the following code:
+
+```{r}
+optCP_i_travel1 <- 
+which.min(abs(tree_model3$cptable[,"xerror"] - optError_travel1))
+```
+
+Finally, to get the best CP, we find the cp value corresponding to optCP_i calculated above:
+
+```{r}
+optCP_travel1 <- tree_model3$cptable[optCP_i_travel1, "CP"]
+print(optCP_travel1)
+```
+
+\newpage
+
+To plot an rpart decision tree we can use the "rpart.plot()" function from "rpart.plot" package:
+```{r, results='asis'}
+library(rpart.plot)
+rpart.plot(tree_model3)
+rpart.rules(tree_model3)
+```
+
+\newpage
+
+To obtain the error rate for the training and test data, we run the following sets of commands:
+
+```{r}
+#Error rate for training data
+
+pred_train3 <- predict(tree_model3, data = train_dt3, type = "class")
+mean(train_dt3$target != pred_train3)
+
+
+# Error rate for the test data
+
+tree_model3_pruned <- prune(tree_model3, cp = optCP_travel1)
+
+pred_test3 <- predict(tree_model3_pruned, data1 = test_dt3, type = "class")
+mean(test_dt3$target != pred_test3)
+```
+
+Final summary is that for cp=0, we see the best error rate on training data, which is **0.10 (10%)**, but for default cp or any other value, we see the error rate on training data to be in the ballpark of **0.20 (20%)**. Regardless of the cp value, we see that the error rate for the test data in all scenarios remains in the ballpark of **0.45 (45%)**.
+
+\newpage
+
+\sectionfont{\centering}
+
+# Random Forest
+
+In order to create a random forest model for our data set, we run the following chunk of code:
+
+```{r}
+library(randomForest)
+rf <- randomForest(target ~ ., data = tr, mtry = sqrt(ncol(tr)-1),
+                  ntree = 300, proximity = T, importance = T)
+              
+print(rf)
+names(rf)
+```
+
+The OOB error rate for our random forest model is **0.1988**
+
+\newpage
+
+## Attributes
+
+To view all the attributes we can call upon using our model, we utilize the attributes() function as follows:
+
+```{r}
+attributes(rf)
+```
+
+\newpage
+
+## Plot
+
+We plot the error rates with various number of trees using the plot() function. In this result, we'll see a red curve, which is the error rate for the positive class that is **"Returned"** in our case, green curve is for the negative class that is **"Didn't Return"**, and the black curve indicates the error rate on OOB.
+
+```{r}
+plot(rf)
+```
+
+\newpage
+
+## MeanDecreaseAccuracy & MeanDecreaseGini
+
+Get the importance of variables by the function "importance()". Include type = 1 in the importance function is to get the important variables based on MeanDecreaseAccuracy. Type=2 is for MeanDecreaseGini. Just selecting a subset of results, where the value is greater than 10, so we don't get many variables back.
+
+```{r}
+imp1 <- importance(rf, type = 1)
+imp2 <- importance(rf, type = 2)
+
+imp1
+imp2
+```
+
+\newpage
+
+To see just a subset of the important variables, we can set a threshold on MeanDecreaseAccuracy and MeanDecreaseGini > 10
+
+```{r}
+subset(imp1, imp1[] >  10)
+subset(imp2, imp2[] >  10)
+```
+
+\newpage
+
+## Importance Plot
+
+```{r}
+varImpPlot(rf)
+```
+
+Based on the above plots, we can see that **Is.Non.Annual** is the most important variable in both MeanDecreaseAccuracy and MeanDecreaseGini categories. However, the second most important variable in the first category is **SPR.New.Existing**, which makes sense as they're both the measures of new and existing customers and whether they go for a tour annually or not. In the second category, the second most important variable is **SingleGradeTripFlag**, which is what we saw in our Decision Tree model, as that's the flag for student groups belonging to the same grade, going for a tour. All in all, these variables are indeed quite important in predicting the outcome of our model and whether customers will return to the travel company or not.
+
+\newpage
+
+## Predicted Classes & Probablities
+
+We can also obtain the predicted classes and predicted probabilities using the following codes:
+
+```{r}
+head(rf$predicted)
+head(rf$votes)
+```
+
+\newpage
+
+## Best mtry
+
+To obtain the best value of mtry we can use the validation set. In particular, we can check the performance of the model for different values of mtry and check which one works best on a validation set.
+
+```{r}
+ind_rf <- sample(2, nrow(tr), replace = T, prob = c(0.7, 0.3))
+train_rf <- tr[ind_rf == 1, ] 
+validation_rf <- tr[ind_rf == 2, ] 
+
+pr.err <- c() 
+for(mt in seq(1,ncol(train_rf))) {
+  library(randomForest)
+  rf1 <- randomForest(target~., data = train_rf, ntree = 100,
+                mtry = ifelse(mt == ncol(train_rf), mt-1, mt))
+  
+  predicted_rf <- predict(rf1, newdata = validation_rf, type = "class")
+  pr.err <- c(pr.err, mean(validation_rf$target != predicted_rf))
+}
+
+bestmtry <- which.min(pr.err)
+
+bestmtry
+```
+
+\newpage
+
+## Confusion Matrix
+
+To obtain a confusion matrix, we can also use the confusionMatrix() function from the “caret” package. Similar to the table() function, confusionMatrix() also receives the predicted and actual labels as inputs.
+
+```{r}
+library(caret)
+confusionMatrix(rf$predicted, tr$target, positive = "Returned")
+```
+
+\newpage
+
+## Evaluation Charts
+
+To draw the evaluation charts we use “ROCR” package. There are two function in this package that we require to draw all different charts discussed in class: prediction and performance. The prediction() function receives two inputs:
+
+1. The predicted probability of the positive class and 
+2. The true labels 
+
+The output of the prediction function will be given to the performance() function to draw the charts
+
+```{r}
+library(ROCR) 
+score <- rf$votes[, 2] 
+pred <- prediction(score, tr$target)
+
+pred
+```
+
+\newpage
+
+### Gain chart
+
+The gain chart for our model is:
+
+```{r}
+perf <- performance(pred, "tpr", "rpp")
+
+perf
+
+plot(perf)
+```
+
+\newpage
+
+## ROC Curve
+
+The ROC curve for our model is:
+
+```{r}
+perf1 <- performance(pred, "tpr", "fpr")
+
+perf1
+
+plot(perf1)
+```
+
+## Area under the curve
+
+The area under the curve of our ROC curve is:
+
+```{r}
+auc <- unlist(slot(performance(pred, "auc"), "y.values"))
+```
+
+The area under the curve is **0.8624245.**
+
+\newpage
+
+## Determining the best cut-off point
+
+The performance() function for ROC curve returns tpr, fpr and alpha-values (cut-off points). We can use the following code to write a function that received these and return the best cut-off point as the point closest to the corner [0, 1]. The input argument to this function is perf (the output of the performance() function). 
+
+The mapply function applies the function FUN to all **perf@x.values**, **perf@y.values**, and **perf@alpha.values**. In the function FUN(), we first compute the distance of all the points on the ROC curve from the corner point [0,1]. These distance values are stored in the vector “d”. We then find the index of the point that is the closest point to the corner. This index is stored in the variable named “ind”. The output of this function is then the tpr, fpr and the probability threshold corresponding to this index.
+
+```{r}
+cut.ind <- mapply(FUN = function(x,y,p) {
+  d=(x-0)^2+(y-1)^2 
+  ind<- which(d==min(d))
+  c(recall = y[[ind]], specificity = 1-x[[ind]],cutoff = p[[ind]])
+  }, perf@x.values, perf@y.values, perf@alpha.values)
+
+cut.ind
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Logistic regression
+
+The original data is first divided into a test set and a training set based on a ratio of 8:2.
+```{r}
+set.seed(123) 
+trainIndex <- createDataPartition(tr$target, p = 0.8, list = FALSE)
+training <- tr[trainIndex, ]
+testing <- tr[-trainIndex, ]
+```
+
+Use the glm() function to create a logistic regression model. The predicted variable is 'target'. 'family = "binomial"' specifies the type of probability distribution used in the logistic regression model, in this case binomial, which is suitable for binary classification problems.
+```{r}
+glm <- glm(target ~ ., data = training, family = "binomial")
+summary(glm)
+```
+
+\newpage
+
+Calculate the residual deviance of the logistic regression model
+```{r}
+rd <- summary(glm)$deviance
+```
+
+```{r}
+1-pchisq(rd, 10)
+```
+```{r}
+Pred_glm <- predict(glm, newdata = testing, type = "response")
+Pred_glm
+```
+
+\newpage
+
+```{r}
+Class_glm <- ifelse(Pred_glm >= 0.5, "YES", "NO")
+Class_glm
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Neural network
+Normalize data before training a neural network.
+```{r}
+library(dplyr)
+myscale <- function(x) {
+(x - min(x)) / (max(x) - min(x))
+}
+tr_nnet <- tr %>% mutate_if(is.numeric, myscale)
+```
+
+Split our normalized data into a training set and a test set.
+```{r}
+set.seed(1234)
+ind <- sample(2, nrow(tr_nnet), replace = T, prob = c(0.7, 0.3))
+train_nnet <- tr_nnet[ind == 1, ]
+test_nnet <- tr_nnet[ind == 2, ]
+```
+
+## Neural network Model
+Then create neural network model,change the size=3, maxit=100.
+```{r}
+library(nnet)
+nnModel <- nnet(target ~ ., data = train_nnet, linout = FALSE,
+                size = 3, decay = 0.01, maxit = 100)
+```
+
+\newpage
+
+```{r}
+summary(nnModel)
+```
+
+\newpage
+
+Use wts to get the best weights found and fitted.values to get the fitted values on training data
+
+```{r}
+nnModel$wts
+nnModel$fitted.values
+```
+
+\newpage
+
+Use 'NeuralNetTools'package to draw Neural network plot.
+
+```{r}
+library(NeuralNetTools)
+plotnet(nnModel)
+```
+
+```{r}
+nn.preds = predict(nnModel, test_nnet)
+```
+
+```{r}
+nn.preds = as.factor(predict(nnModel, test_nnet, type = "class"))
+```
+
+\newpage
+
+Create a simple confusion matrix
+```{r}
+CM <- table(nn.preds, test_nnet$target, dnn =  c("predicted","actual"))
+print(CM)
+```
+```{r}
+error_metric = function(CM) {
+  TN = CM[1,1]
+  TP = CM[2,2]
+  FN = CM[1,2]
+  FP = CM[2,1]
+  recall = (TP)/(TP+FN)
+  precision =(TP)/(TP+FP)
+  falsePositiveRate = (FP)/(FP+TN)
+  falseNegativeRate = (FN)/(FN+TP)
+  error =(FP+FN)/(TP+TN+FP+FN)
+  modelPerf <- list("precision" = precision,
+                               "recall" = recall,
+                               "falsepositiverate" = falsePositiveRate,
+                    "falsenegativerate" = falseNegativeRate,
+                    "error" = error)
+  return(modelPerf)
+}
+outPutlist <- error_metric(CM)
+library(plyr)
+df <- ldply(outPutlist, data.frame)
+setNames(df, c("", "Values"))
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Evaluation of Best Model
+
+First we simply created four models to check their accuracy
+```{r}
+set.seed(123) 
+trainIndex <- createDataPartition(tr$target, p = 0.8, list = FALSE)
+training <- tr[trainIndex, ]
+testing <- tr[-trainIndex, ]
+
+fit.tree <- rpart(target ~ ., data=training, method="class")
+pred.tree <- predict(fit.tree, testing, type="class")
+
+fit.rf <- randomForest(target ~ ., data=training, ntree=100)
+pred.rf <- predict(fit.rf, testing)
+
+fit.logit <- glm(target ~ ., data = training, family = binomial)
+pred.logit<- predict(fit.logit, newdata = testing, type = "response")
+
+fit.nn <- nnet(target ~ ., data=training, size=5)
+pred.nn <- predict(fit.nn, testing, type="class")
+
+```
+
+```{r}
+acc.tree <- sum(pred.tree == testing$target)/nrow(testing)
+acc.rf <- sum(pred.rf == testing$target)/nrow(testing)
+acc.logit <- sum(pred.logit == testing$target)/nrow(testing)
+acc.nn <- sum(pred.nn == testing$target)/nrow(testing)
+```
+
+
+```{r}
+cat("Decision Tree Accuracy:", acc.tree, "\n")
+cat("Random Forest Accuracy:", acc.rf, "\n")
+cat("Logistic Regression Accuracy:", acc.logit, "\n")
+cat("Neural Network Accuracy:", acc.nn, "\n")
+```
+The accuracy of the **decision tree model is 0.8155136**. This means that the model correctly predicted **81.55%** of the target's results on the test set. This is considered to be a good accuracy rate, but it should be noted that the decision tree model is prone to overfitting.
+
+The accuracy of the **random forest model is 0.8008386**, which means that the model correctly predicts **80.08%** of the targets in the test set. The random forest model is an integrated learning method that reduces the risk of overfitting by combining multiple decision tree models, and therefore can improve accuracy more effectively than a single decision tree model.
+
+The accuracy of the **logistic regression model is 0.8071279**, which means that the model correctly predicts the results of **80.71%** of the targets in the test set.
+
+The accuracy of the **neural network model was 0.6519916**. This means that on the test set, the model correctly predicted **65.20%** of the flower species. The neural network model can be adapted to more complex problems and data sets, but careful selection of the network structure and tuning of the hyperparameters is needed to obtain better performance.
+
+\newpage
+
+Then calculate the accuracy of the previously completed model.
+```{r}
+acc_tree1 <- sum(pred_test1 == test_dt1$target)/nrow(test_dt1)
+acc_tree2 <- sum(pred_test2 == test_dt2$target)/nrow(test_dt2)
+acc_tree3 <- sum(pred_test3 == test_dt3$target)/nrow(test_dt3)
+acc_rf <- sum(predicted_rf == testing$target)/nrow(testing)
+acc_logit <- sum(Pred_glm == testing$target)/nrow(testing)
+acc_nn <- sum(nn.preds == test_nnet$target)/nrow(test_nnet)
+```
+
+
+```{r}
+cat("Decision Tree1 Accuracy:", acc_tree1, "\n")
+cat("Decision Tree2 Accuracy:", acc_tree2, "\n")
+cat("Decision Tree3 Accuracy:", acc_tree3, "\n")
+cat("Random_Forest Accuracy:", acc_rf, "\n")
+cat("Logistic_Regression Accuracy:", acc_logit, "\n")
+cat("Neural_Network Accuracy:", acc_nn, "\n")
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Cross Validation
+
+In order to perform cross validation on our data set, we perform this on a copy of original data set (tr), called tr1. This is to ensure we don't mess up with our overall analysis above. However, when performing this analysis, we remove four variables from our data set called **To.Grade**, **MDR.Low.Grade**, **MDR.High.Grade**, and **SchoolGradeType**, as these variables are causing level mismatches when running through Logistic Regression, which results in skewing of our analysis.
+
+```{r}
+tr1 <- tr[sample(nrow(tr)), ]
+tr1 <- tr1[,-c(2, 17, 18, 32)]
+
+```
+
+To perform the cross validation, we run the following lines of code:
+
+```{r}
+options(scipen = 5)# to get non-scientific numbers
+k <- 10
+nmethod <- 1
+folds <- cut(seq(1,nrow(tr1)),breaks=k,labels=FALSE)
+model.err_cross <- matrix(-1,k,nmethod,dimnames=list(paste0("Fold", 1:k),
+                                                     c("LogitReg")))
+
+for(i in 1:k)
+{
+  testindexes_cross <- which(folds==i, arr.ind=TRUE)
+  test_cross <- tr1[testindexes_cross, ]
+  train_cross <- tr1[-testindexes_cross, ]
+
+  options(warn = -1)
+  LogitModel_cross <- glm(target~., data = train_cross, family = "binomial")
+  predicted_cross <- predict(LogitModel_cross, newdata = test_cross,
+                             type = "response")
+  
+  pred_class_cross <- as.factor(ifelse(predicted_cross >= 0.5,
+                                  "Returned", "Didn't Return"))
+  
+  model.err_cross[i] <- mean(
+    as.character(test_cross$target) != as.character(pred_class_cross))
+}
+```
+
+Our final mean and the mean for all k(10) folds is as follows:
+
+```{r}
+mean(model.err_cross)
+model.err_cross
+```
+
+\newpage
+
+\sectionfont{\centering}
+
+# Final Summary
+
+**"Decision Tree1 Accuracy: 0.9008811":** this model is the first decision tree model with an accuracy of 0.9008811 on the test set. this model performs well with an accuracy close to 1, which means that it is able to classify the samples in the test set accurately.
+
+**"Decision Tree2 Accuracy: 1.68547":** this model is the second decision tree model with an accuracy of 1.68547 on the test set. again, this model is also a tree-structure based classifier, but with a higher accuracy compared to the first model, indicating that it is more capable of classifying the data.
+
+**"Decision Tree3 Accuracy: 1.652991":** this model is the third decision tree model with an accuracy of 1.652991 on the test set. the accuracy of this model is similar to the second model, but slightly lower.
+
+**"Random_Forest Accuracy: 0.8050314":** this model is a random forest model with an accuracy of 0.8050314 on the test set. random forest is an integrated learning algorithm based on multiple decision trees, which performs random sampling and feature selection on the data, then trains multiple decision trees based on these subsets, and finally makes decisions on the classification results by voting. The final decision on the classification result is made by voting. Although its accuracy is slightly lower than the first decision tree model, it still performs well and can be used for classification tasks.
+
+**"Logistic_Regression Accuracy: 0":** this model is a logistic regression model and its accuracy on the test set is 0. However, on this test set, this model has an accuracy of 0, indicating that it cannot classify the data accurately.
+
+**"Neural_Network Accuracy: 0.7642753":** this model is a neural network model and its accuracy on the test set is 0.7642753. neural network is a classifier based on a network structure consisting of multiple neurons that can handle non-linear and complex models. The accuracy of this model is slightly lower than the first decision tree model, but still better than the logistic regression model.
+
+Taken together, these models perform differently on the test set, with the **decision tree model and the random forest model** having **higher accuracy** and performing well to accurately classify the data. The **logistic regression** and **neural network models** performed **poorly** on this test set with lower accuracy and may need further tuning or improvement to improve performance. 
+
+It should be noted that **high accuracy does not necessarily mean that the model is the best choice**, and other factors such as model complexity, interpret-ability, etc. needs to be considered. It is also important to note the problem of **overfitting**, where high accuracy may also be due to the model overfitting the training set data. Therefore, we believe that **decision tree1 performs better**.
+
+\newpage
+
+\sectionfont{\centering}
+
+# References
+
+1. [How to Find The Statistical Mode?](https://stackoverflow.com/questions/2547402/how-to-find-the-statistical-mode)
+2. [RPart in Decision Trees in R](https://www.learnbymarketing.com/tutorials/rpart-decision-trees-in-r/)
+3. [RPart Plots in R](http://www.milbo.org/rpart-plot/prp.pdf)
+4. [Parsing Quotes Out of NA Strings](https://stackoverflow.com/questions/34566983/parsing-quotes-out-of-na-strings)
+5. [Long Labels ggplot](https://www.andrewheiss.com/blog/2022/06/23/long-labels-ggplot/)
+6. [Random Forest Lecture Notes](https://uic.blackboard.com/bbcswebdav/pid-11050935-dt-content-rid-142801175_2/xid-142801175_2)
